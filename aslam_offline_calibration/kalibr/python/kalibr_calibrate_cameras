@@ -176,6 +176,8 @@ def main():
                 
             #extract the targets
             multithreading = not (parsed.verbose or parsed.showextraction)
+            if not getattr(cam.ctarget.detector, "supportsMultithreading", True):
+                multithreading = False
             observations = kc.extractCornersFromDataset(cam.dataset, cam.ctarget.detector, 
                                                         multithreading=multithreading, clearImages=False,
                                                         noTransformation=True)

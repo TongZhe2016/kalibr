@@ -18,6 +18,8 @@ import math
 import gc
 import sys
 
+from .FisheyeAprilgridDetector import FisheyeAprilgridOnnxDetector
+
 np.set_printoptions(suppress=True, precision=8)
 
 #DV group IDs
@@ -117,14 +119,29 @@ class TargetDetector(object):
                                                                  targetParams['tagSpacing'], 
                                                                  options)
         else:
-            RuntimeError('Unknown calibration target type!')
+            raise RuntimeError('Unknown calibration target type!')
 
-        options = acv.GridDetectorOptions() 
-        options.imageStepping = showOneStep
-        options.plotCornerReprojection = showReproj
-        options.filterCornerOutliers = False
-        
-        self.detector = acv.GridDetector(cameraGeometry, self.grid, options)
+        if targetType == 'aprilgrid' and targetParams.get('detectorBackend', 'apriltag2') == 'fisheye_onnx':
+            self.detector = FisheyeAprilgridOnnxDetector(
+                cameraGeometry=cameraGeometry,
+                grid=self.grid,
+                tagRows=targetParams['tagRows'],
+                tagCols=targetParams['tagCols'],
+                modelPath=targetParams['detectorModelPath'],
+                heatmapThreshold=targetParams['detectorHeatmapThreshold'],
+                minCornersPerTag=targetParams['detectorMinCornersPerTag'],
+                minBorderDistance=targetParams['detectorMinBorderDistance'],
+                minTagsForValidObs=options.minTagsForValidObs,
+                showExtractionVideo=showCorners,
+                imageStepping=showOneStep
+            )
+        else:
+            detectorOptions = acv.GridDetectorOptions() 
+            detectorOptions.imageStepping = showOneStep
+            detectorOptions.plotCornerReprojection = showReproj
+            detectorOptions.filterCornerOutliers = False
+            
+            self.detector = acv.GridDetector(cameraGeometry, self.grid, detectorOptions)
 
 class CalibrationTarget(object):
     def __init__(self, target, estimateLandmarks=False):
@@ -285,4 +302,3 @@ class CameraCalibration(object):
         else:
             sm.logDebug("The estimator did not accept this batch")
         return success
-

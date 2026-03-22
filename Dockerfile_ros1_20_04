@@ -14,6 +14,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
 	libpoco-dev libtbb-dev libblas-dev liblapack-dev libv4l-dev \
 	python3-catkin-tools python3-osrf-pycommon
 
+RUN python3 -m pip install --no-cache-dir onnxruntime
+
 
 # Create the workspace and build kalibr in it
 ENV WORKSPACE /catkin_ws
@@ -39,7 +41,6 @@ ENTRYPOINT export KALIBR_MANUAL_FOCAL_LENGTH_INIT=1 && \
 	# /bin/bash -c "source \"$WORKSPACE/devel/setup.bash\"" && \ 
 	cd $WORKSPACE && \
 	/bin/bash
-
 
 
 

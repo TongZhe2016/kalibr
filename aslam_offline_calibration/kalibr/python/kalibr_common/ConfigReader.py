@@ -3,11 +3,18 @@ import yaml
 import sys
 import numpy as np
 import functools
+import os
+import numbers
 
 import math
 import aslam_cv as cv
 import aslam_cv_backend as cvb
 import sm
+
+try:
+    string_types = (basestring,)
+except NameError:
+    string_types = (str,)
 
 class AslamCamera(object):
     def __init__(self, camera_model, intrinsics, dist_model, dist_coeff, resolution):
@@ -552,6 +559,13 @@ class CalibrationTargetParameters(ParametersBase):
     def getTargetParams(self):
         #read target specidic data
         targetType = self.getTargetType()
+        errList = []
+
+        def _is_int_like(value):
+            return isinstance(value, numbers.Integral) and not isinstance(value, bool)
+
+        def _is_real_like(value):
+            return isinstance(value, numbers.Real) and not isinstance(value, bool)
         
         if targetType == 'checkerboard':
             try:
@@ -562,13 +576,13 @@ class CalibrationTargetParameters(ParametersBase):
             except KeyError as e:
                 self.raiseError("Calibration target configuration in {0} is missing the field: {1}".format(self.yamlFile, str(e)) )
             
-            if not isinstance(targetRows,int) or targetRows < 3:
+            if not _is_int_like(targetRows) or targetRows < 3:
                 errList.append("invalid targetRows (int>=3)")
-            if not isinstance(targetCols,int) or targetCols < 3:
+            if not _is_int_like(targetCols) or targetCols < 3:
                 errList.append("invalid targetCols (int>=3)")
-            if not isinstance(rowSpacingMeters,float) or rowSpacingMeters <= 0.0:
+            if not _is_real_like(rowSpacingMeters) or rowSpacingMeters <= 0.0:
                 errList.append("invalid rowSpacingMeters (float)")
-            if not isinstance(colSpacingMeters,float) or colSpacingMeters <= 0.0:
+            if not _is_real_like(colSpacingMeters) or colSpacingMeters <= 0.0:
                 errList.append("invalid colSpacingMeters (float)")
                 
             targetParams = {'targetRows': targetRows,
@@ -586,11 +600,11 @@ class CalibrationTargetParameters(ParametersBase):
             except KeyError as e:
                 self.raiseError("Calibration target configuration in {0} is missing the field: {1}".format(self.yamlFile, str(e)) )
             
-            if not isinstance(targetRows,int) or targetRows < 3:
+            if not _is_int_like(targetRows) or targetRows < 3:
                 errList.append("invalid targetRows (int>=3)")
-            if not isinstance(targetCols,int) or targetCols < 3:
+            if not _is_int_like(targetCols) or targetCols < 3:
                 errList.append("invalid targetCols (int>=3)")
-            if not isinstance(spacingMeters,float) or spacingMeters <= 0.0:
+            if not _is_real_like(spacingMeters) or spacingMeters <= 0.0:
                 errList.append("invalid spacingMeters (float)")
             if not isinstance(asymmetricGrid,bool):
                 errList.append("invalid asymmetricGrid (bool)")
@@ -610,21 +624,70 @@ class CalibrationTargetParameters(ParametersBase):
             except KeyError as e:
                 self.raiseError("Calibration target configuration in {0} is missing the field: {1}".format(self.yamlFile, str(e)) )
             
-            if not isinstance(tagRows,int) or tagRows < 3:
+            if not _is_int_like(tagRows) or tagRows < 3:
                 errList.append("invalid tagRows (int>=3)")
-            if not isinstance(tagCols,int) or tagCols < 3:
+            if not _is_int_like(tagCols) or tagCols < 3:
                 errList.append("invalid tagCols (int>=3)")
-            if not isinstance(tagSize,float) or tagSize <= 0.0:
+            if not _is_real_like(tagSize) or tagSize <= 0.0:
                 errList.append("invalid tagSize (float)")
-            if not isinstance(tagSpacing,float) or tagSpacing <= 0.0:
+            if not _is_real_like(tagSpacing) or tagSpacing <= 0.0:
                 errList.append("invalid tagSpacing (float)")
+
+            detectorBackend = self.data.get("detectorBackend", "apriltag2")
+            detectorModelPath = self.data.get("detectorModelPath", None)
+            detectorHeatmapThreshold = self.data.get("detectorHeatmapThreshold", 0.7)
+            detectorMinCornersPerTag = self.data.get("detectorMinCornersPerTag", 3)
+            detectorMinBorderDistance = self.data.get("detectorMinBorderDistance", 4.0)
+
+            if not isinstance(detectorBackend, string_types):
+                errList.append("invalid detectorBackend (str)")
+            elif detectorBackend not in ["apriltag2", "fisheye_onnx"]:
+                errList.append("invalid detectorBackend (apriltag2|fisheye_onnx)")
+
+            if detectorBackend == "fisheye_onnx":
+                if tagRows != 6 or tagCols != 6:
+                    errList.append("fisheye_onnx only supports 6x6 aprilgrid; use apriltag2 for other board sizes")
+
+                if detectorModelPath is None:
+                    errList.append("detectorModelPath is required when detectorBackend=fisheye_onnx")
+                elif not isinstance(detectorModelPath, string_types) or len(detectorModelPath.strip()) == 0:
+                    errList.append("invalid detectorModelPath (non-empty str)")
+
+            if not _is_real_like(detectorHeatmapThreshold) or detectorHeatmapThreshold < 0.0 or detectorHeatmapThreshold > 1.0:
+                errList.append("invalid detectorHeatmapThreshold (0<=float<=1)")
+            if not _is_int_like(detectorMinCornersPerTag) or detectorMinCornersPerTag < 1 or detectorMinCornersPerTag > 4:
+                errList.append("invalid detectorMinCornersPerTag (1<=int<=4)")
+            if not _is_real_like(detectorMinBorderDistance) or detectorMinBorderDistance < 0.0:
+                errList.append("invalid detectorMinBorderDistance (float>=0)")
+
+            if detectorModelPath is not None and isinstance(detectorModelPath, string_types) and len(detectorModelPath.strip()) > 0:
+                if os.path.isabs(detectorModelPath):
+                    detectorModelPathResolved = detectorModelPath
+                else:
+                    yaml_dir = os.path.dirname(os.path.abspath(self.yamlFile))
+                    detectorModelPathResolved = os.path.abspath(os.path.join(yaml_dir, detectorModelPath))
+            else:
+                detectorModelPathResolved = None
+
+            if detectorBackend == "fisheye_onnx" and detectorModelPathResolved is not None:
+                if not os.path.isfile(detectorModelPathResolved):
+                    errList.append("detectorModelPath does not exist: {0}".format(detectorModelPathResolved))
                 
             targetParams = {'tagRows': tagRows,
                             'tagCols': tagCols,
                             'tagSize': tagSize,
                             'tagSpacing': tagSpacing,
+                            'detectorBackend': detectorBackend,
+                            'detectorModelPath': detectorModelPathResolved,
+                            'detectorModelPathOriginal': detectorModelPath,
+                            'detectorHeatmapThreshold': float(detectorHeatmapThreshold),
+                            'detectorMinCornersPerTag': int(detectorMinCornersPerTag),
+                            'detectorMinBorderDistance': float(detectorMinBorderDistance),
                             'targetType': targetType}
-            
+
+        if len(errList) > 0:
+            self.raiseError("Invalid calibration target configuration in {0}: {1}".format(self.yamlFile, ", ".join(errList)))
+
         return targetParams
         
     ###################################################
@@ -650,6 +713,10 @@ class CalibrationTargetParameters(ParametersBase):
             print("    Cols: {0}".format(targetParams['tagCols']), file=dest)
             print("    Size: {0} [m]".format(targetParams['tagSize']), file=dest)
             print("    Spacing {0} [m]".format( targetParams['tagSize']*targetParams['tagSpacing'] ), file=dest)
+            print("    Detector backend: {0}".format(targetParams.get('detectorBackend', 'apriltag2')), file=dest)
+            if targetParams.get('detectorBackend', 'apriltag2') == 'fisheye_onnx':
+                print("    Detector model: {0}".format(targetParams.get('detectorModelPath', '')), file=dest)
+                print("    Heatmap threshold: {0}".format(targetParams.get('detectorHeatmapThreshold', 0.7)), file=dest)
 
 
         
