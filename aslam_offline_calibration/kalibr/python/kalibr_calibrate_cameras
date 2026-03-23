@@ -106,6 +106,8 @@ def parseArgs():
     outlierSettings.add_argument('--plot-outliers', action='store_true', dest='doPlotOutliers', help='Plot the detect outliers during extraction (this could be slow)')
     
     outputSettings = parser.add_argument_group('Output options')
+    outputSettings.add_argument('--save_dir', type=str, dest='saveDir', default=None, help='Directory to write calibration results (yaml, txt, pdf, etc.). Default: the same directory as the bag file.')
+    outputSettings.add_argument('--log_dest', type=str, dest='logDest', default=None, help='Filename stem (no path) for outputs when --save_dir is set. Default: bag filename without extension. Ignored when --save_dir is not set.')
     outputSettings.add_argument('--verbose', action='store_true', dest='verbose', help='Enable (really) verbose output (disables plots)')
     outputSettings.add_argument('--show-extraction', action='store_true', dest='showextraction', help='Show the calibration target extraction. (disables plots)')
     outputSettings.add_argument('--plot', action='store_true', dest='plot', help='Plot during calibration (this could be slow).')
@@ -131,6 +133,18 @@ def parseArgs():
     if parsed.minViewOutlier<1:
         sm.logError("Please specify a positive integer (--min-views-outlier).")
         sys.exit(2)
+
+    if parsed.saveDir is not None:
+        parsed.saveDir = os.path.abspath(os.path.expanduser(parsed.saveDir))
+        if os.path.isfile(parsed.saveDir):
+            sm.logError("--save_dir must be a directory, not a file: {0}".format(parsed.saveDir))
+            sys.exit(2)
+        if not os.path.isdir(parsed.saveDir):
+            try:
+                os.makedirs(parsed.saveDir)
+            except OSError as e:
+                sm.logError("Unable to create --save_dir {0}: {1}".format(parsed.saveDir, e))
+                sys.exit(2)
     
     #there is a with the gtk plot widget, so we cant plot if we have opencv windows open...
     #--> disable the plots in these special situations
@@ -138,6 +152,15 @@ def parseArgs():
         parsed.dontShowReport = True
     
     return parsed
+
+
+def output_prefix(parsed):
+    """Path prefix for result files (no suffix). Matches legacy behavior when --save_dir is unset."""
+    bagtag = os.path.splitext(parsed.bagfile)[0]
+    if parsed.saveDir is None:
+        return bagtag
+    stem = parsed.logDest if parsed.logDest else os.path.basename(bagtag)
+    return os.path.join(parsed.saveDir, stem)
 
 
 def main():
@@ -410,21 +433,21 @@ def main():
                 pl.show()
             
             #write to file
-            bagtag = os.path.splitext(parsed.bagfile)[0]
-            resultFile = bagtag + "-camchain.yaml"
+            out_prefix = output_prefix(parsed)
+            resultFile = out_prefix + "-camchain.yaml"
             kcc.saveChainParametersYaml(calibrator, resultFile, graph)
             print("Results written to:")
             print("  Saving camera chain calibration to file: {0}".format(resultFile))
             
             #save results to file
-            resultFileTxt = bagtag + "-results-cam.txt"
+            resultFileTxt = out_prefix + "-results-cam.txt"
             kcc.saveResultTxt(calibrator, filename=resultFileTxt)
             print("  Detailed results written to file: {0}".format(resultFileTxt))
             
             #generate report
             print("")
             print("Generating result report...")
-            reportFile = bagtag + "-report-cam.pdf"
+            reportFile = out_prefix + "-report-cam.pdf"
             G=None; 
             if numCams>1: 
                 G=graph
@@ -435,7 +458,7 @@ def main():
             #generate trajectory file
             if parsed.exportPoses:
                 print("Exporting poses...")
-                posesFile = bagtag + "-poses-cam0.csv"
+                posesFile = out_prefix + "-poses-cam0.csv"
                 kcc.exportPoses(calibrator, filename=posesFile)
                 print("  Poses written to {0}".format(posesFile))
                 print("")
