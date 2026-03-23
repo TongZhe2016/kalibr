@@ -619,21 +619,44 @@ def plotCameraRig(baselines, fno=1, clearFigure=True, title=""):
     a3d.set_zlabel('z')
 
 
-def exportPoses(cself, filename):
-    
-    # Append our header, and select times at IMU rate
-    f = open(filename, 'w')
-    print("#timestamp, p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []", file=f)
-    
-    # Times are in nanoseconds -> convert to seconds
-    # Use the ETH groundtruth csv format [t,q,p,v,bg,ba]
-    views = sorted(cself.views, key=lambda x: x.timestamp)
-    for view in views:
-        T_target_camera = sm.Transformation(view.dv_T_target_camera.T())
-        position = T_target_camera.t()
-        orientation = T_target_camera.q()
-        print("{:.0f},".format(1e9 * view.timestamp) + ",".join(map("{:.6f}".format, position)) \
-               + "," + ",".join(map("{:.6f}".format, orientation)) , file=f)
+POSE_CSV_HEADER = "#timestamp, p_RS_R_x [m], p_RS_R_y [m], p_RS_R_z [m], q_RS_w [], q_RS_x [], q_RS_y [], q_RS_z []"
+
+
+def _getTargetCameraTransform(view, cam_id):
+    if cam_id < 0:
+        raise ValueError("cam_id must be non-negative")
+
+    T_target_cam0 = sm.Transformation(view.dv_T_target_camera.T())
+    if cam_id == 0:
+        return T_target_cam0
+
+    T_camN_target = T_target_cam0.inverse()
+    for baseline_idx in range(0, cam_id):
+        T_camN_target = sm.Transformation(view.baselines[baseline_idx].T()) * T_camN_target
+
+    return T_camN_target.inverse()
+
+
+def exportPoses(cself, filename, cam_id=0):
+    with open(filename, 'w') as f:
+        print(POSE_CSV_HEADER, file=f)
+
+        views = sorted(cself.views, key=lambda x: x.timestamp)
+        for view in views:
+            T_target_camera = _getTargetCameraTransform(view, cam_id)
+            position = T_target_camera.t()
+            orientation = T_target_camera.q()
+            print("{:.0f},".format(1e9 * view.timestamp) + ",".join(map("{:.6f}".format, position)) \
+                   + "," + ",".join(map("{:.6f}".format, orientation)), file=f)
+
+
+def exportPosesAll(cself, filenamePrefix):
+    pose_files = list()
+    for cam_id in range(0, len(cself.cameras)):
+        filename = "{0}-cam{1}.csv".format(filenamePrefix, cam_id)
+        exportPoses(cself, filename=filename, cam_id=cam_id)
+        pose_files.append(filename)
+    return pose_files
 
 def saveResultTxt(cself, filename="camera_calibration_result.txt"):
     f1=open(filename, 'w')
