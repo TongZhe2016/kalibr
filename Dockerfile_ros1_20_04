@@ -12,13 +12,26 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive \
 	doxygen \
 	libopencv-dev \
 	libpoco-dev libtbb-dev libblas-dev liblapack-dev libv4l-dev \
-	python3-catkin-tools python3-osrf-pycommon
+	python3-catkin-tools python3-osrf-pycommon \
+	zlib1g
 
-RUN python3 -m pip install --no-cache-dir onnxruntime
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+	python3 -m pip install --no-cache-dir \
+	onnxruntime-gpu==1.19.2 \
+	nvidia-cuda-runtime-cu12==12.1.105 \
+	nvidia-cuda-nvrtc-cu12==12.1.105 \
+	nvidia-cufft-cu12==11.0.2.54 \
+	nvidia-curand-cu12==10.3.2.106 \
+	nvidia-cublas-cu12==12.1.3.1 \
+	nvidia-cudnn-cu12==9.0.0.312
+
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV LD_LIBRARY_PATH=/usr/local/lib/python3.8/dist-packages/nvidia/cublas/lib:/usr/local/lib/python3.8/dist-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.8/dist-packages/nvidia/cuda_nvrtc/lib:/usr/local/lib/python3.8/dist-packages/nvidia/cudnn/lib:/usr/local/lib/python3.8/dist-packages/nvidia/cufft/lib:/usr/local/lib/python3.8/dist-packages/nvidia/curand/lib
 
 
 # Create the workspace and build kalibr in it
-ENV WORKSPACE /catkin_ws
+ENV WORKSPACE=/catkin_ws
 
 RUN mkdir -p $WORKSPACE/src && \
 	cd $WORKSPACE && \
@@ -37,11 +50,5 @@ RUN	cd $WORKSPACE &&\
 # When a user runs a command we will run this code before theirs
 # This will allow for using the manual focal length if it fails to init
 # https://github.com/ethz-asl/kalibr/pull/346
-ENTRYPOINT export KALIBR_MANUAL_FOCAL_LENGTH_INIT=1 && \
-	# /bin/bash -c "source \"$WORKSPACE/devel/setup.bash\"" && \ 
-	cd $WORKSPACE && \
-	/bin/bash
-
-
-
+ENTRYPOINT ["/bin/bash", "-lc", "export KALIBR_MANUAL_FOCAL_LENGTH_INIT=1 && cd \"$WORKSPACE\" && exec /bin/bash"]
 

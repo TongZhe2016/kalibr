@@ -49,10 +49,12 @@ class FisheyeAprilgridOnnxDetector(object):
         self._imageStepping = bool(imageStepping)
         self.supportsMultithreading = False
 
+        self._preload_gpu_runtime()
+        self._sessionProviders = self._build_provider_list()
         try:
             self._session = ort.InferenceSession(
                 self._modelPath,
-                providers=["CPUExecutionProvider"]
+                providers=self._sessionProviders
             )
         except Exception as e:
             raise RuntimeError(
@@ -61,6 +63,20 @@ class FisheyeAprilgridOnnxDetector(object):
 
         self._inputName = self._session.get_inputs()[0].name
         self._outputNames = [o.name for o in self._session.get_outputs()]
+        self._activeProviders = list(self._session.get_providers())
+
+        if "CUDAExecutionProvider" in self._activeProviders:
+            sm.logInfo(
+                "FisheyeAprilgridOnnxDetector: using ONNX Runtime providers {0}".format(
+                    self._activeProviders
+                )
+            )
+        else:
+            sm.logWarn(
+                "FisheyeAprilgridOnnxDetector: CUDAExecutionProvider unavailable, falling back to {0}".format(
+                    self._activeProviders
+                )
+            )
 
         if self._showExtractionVideo:
             cv2.namedWindow("Fisheye Aprilgrid corners", cv2.WINDOW_NORMAL)
@@ -186,6 +202,39 @@ class FisheyeAprilgridOnnxDetector(object):
                     )
                 )
         return outputs
+
+    def _preload_gpu_runtime(self):
+        if ort is None:
+            return
+
+        preload = getattr(ort, "preload_dlls", None)
+        if preload is None:
+            return
+
+        try:
+            # Load CUDA/cuDNN runtime libraries from NVIDIA site-packages when available.
+            preload(directory="")
+        except Exception as e:
+            sm.logWarn(
+                "FisheyeAprilgridOnnxDetector: unable to preload ONNX Runtime GPU libraries automatically: {0}".format(
+                    e
+                )
+            )
+
+    def _build_provider_list(self):
+        available = list(ort.get_available_providers())
+        providers = []
+
+        if "CUDAExecutionProvider" in available:
+            providers.append(("CUDAExecutionProvider", {"device_id": 0}))
+
+        if "CPUExecutionProvider" in available:
+            providers.append("CPUExecutionProvider")
+
+        if len(providers) == 0:
+            providers = available
+
+        return providers
 
     def _reshape_xy_px(self, xy_px):
         array = np.asarray(xy_px, dtype=np.float32)

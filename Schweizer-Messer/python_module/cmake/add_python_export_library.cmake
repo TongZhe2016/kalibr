@@ -63,8 +63,23 @@ ${SETUP_PY_TEXT}
   catkin_python_setup()
 
   # Find Python
+  FIND_PACKAGE(PythonInterp REQUIRED)
   FIND_PACKAGE(PythonLibs REQUIRED)
   INCLUDE_DIRECTORIES(${PYTHON_INCLUDE_DIRS})
+
+  execute_process(
+    COMMAND ${PYTHON_EXECUTABLE} -c "import numpy; print(numpy.get_include())"
+    OUTPUT_VARIABLE NUMPY_INCLUDE_DIR
+    RESULT_VARIABLE NUMPY_INCLUDE_RESULT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+
+  if(NUMPY_INCLUDE_RESULT EQUAL 0 AND EXISTS "${NUMPY_INCLUDE_DIR}")
+    INCLUDE_DIRECTORIES(${NUMPY_INCLUDE_DIR})
+  else()
+    message(WARNING "Unable to determine NumPy include directory with ${PYTHON_EXECUTABLE}")
+  endif()
 
   if(APPLE)
     SET(BOOST_COMPONENTS system)
@@ -147,4 +162,3 @@ ${SETUP_PY_TEXT}
   set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${AMCF}") 
   
 ENDFUNCTION()
-
